@@ -26,43 +26,37 @@ export const handler = async (event) => {
     );
     const sheets = google.sheets({ version: 'v4', auth: jwt });
 
-    // Map tool -> "Y/N" format
+    // Always build row in fixed column order
     const toolResults = {};
     tools.forEach((t) => {
       toolResults[t.tool] = `${t.quizDone ? 'Y' : 'N'}/${t.physicalDone ? 'Y' : 'N'}`;
     });
 
-    // Match EXACT header order in your sheet
-    const headerOrder = [
-      'Timestamp',
-      'Student',
-      'Band Saw',
-      'Drill Press',
-      'Belt Sander',
-      'Disc Sander',
-      'Table Saw',
-      'Miter Saw',
-      'Hand Drill',
-      'Soldering Station',
-      '3D Printer'
+    // Force to start at col A
+    const row = [
+      timestamp,        // Column A
+      student,          // Column B
+      toolResults['Band Saw'] || 'N/N',
+      toolResults['Drill Press'] || 'N/N',
+      toolResults['Belt Sander'] || 'N/N',
+      toolResults['Disc Sander'] || 'N/N',
+      toolResults['Table Saw'] || 'N/N',
+      toolResults['Miter Saw'] || 'N/N',
+      toolResults['Hand Drill'] || 'N/N',
+      toolResults['Soldering Station'] || 'N/N',
+      toolResults['3D Printer'] || 'N/N'
     ];
 
-    // Build row aligned with headers
-    const row = headerOrder.map((h) => {
-      if (h === 'Timestamp') return timestamp;
-      if (h === 'Student') return student;
-      return toolResults[h] || ''; // tool columns
-    });
-
-    // Detect tab
+    // Detect correct sheet
     const meta = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
-    const titles = (meta.data.sheets || []).map((s) => s.properties?.title).filter(Boolean);
+    const titles = (meta.data.sheets || []).map(s => s.properties?.title).filter(Boolean);
     const targetTitle =
-      titles.find((t) => t.trim().toLowerCase() === 'responses') || titles[0] || 'Sheet1';
+      titles.find(t => t.trim().toLowerCase() === 'responses') || titles[0] || 'Sheet1';
     const safeTitle = targetTitle.replace(/'/g, "''");
-    const rangeA1 = `'${safeTitle}'!A:Z`;
 
-    // Append
+    // Explicit range starting at column A
+    const rangeA1 = `'${safeTitle}'!A:K`; // A through K, covers 11 cols
+
     await sheets.spreadsheets.values.append({
       spreadsheetId: SHEET_ID,
       range: rangeA1,
