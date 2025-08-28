@@ -35,11 +35,12 @@ export const handler = async (event) => {
 
     await sheets.spreadsheets.values.append({
   spreadsheetId: SHEET_ID,
-  range: "'Responses'!A:E",   // <-- add single quotes around Responses
+  range: "'Responses'!A1:E",   // add the 1
   valueInputOption: "RAW",
   insertDataOption: "INSERT_ROWS",
   requestBody: { values: rows }
 });
+
 
 
     return { statusCode: 200, body: JSON.stringify({ ok: true }) };
