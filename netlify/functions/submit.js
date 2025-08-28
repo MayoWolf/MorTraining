@@ -6,20 +6,17 @@ export const handler = async (event) => {
   }
 
   try {
-    // --- Parse and validate payload ---
     const { student, timestamp, tools } = JSON.parse(event.body || '{}');
     if (!student || !Array.isArray(tools)) {
       return { statusCode: 400, body: 'Invalid payload' };
     }
 
-    // --- Env vars ---
     const credsJson = process.env.GOOGLE_SERVICE_ACCOUNT;
     const SHEET_ID = process.env.SHEET_ID;
     if (!credsJson || !SHEET_ID) {
       return { statusCode: 500, body: 'Missing env vars' };
     }
 
-    // --- Auth with Service Account ---
     const creds = JSON.parse(credsJson);
     const jwt = new google.auth.JWT(
       creds.client_email,
@@ -29,47 +26,50 @@ export const handler = async (event) => {
     );
     const sheets = google.sheets({ version: 'v4', auth: jwt });
 
-    // --- Build rows (one per tool) ---
-    const rows = tools.map((t) => [
-      timestamp,
-      student,
-      t.tool,
-      t.quizDone ? 'YES' : 'NO',
-      t.physicalDone ? 'YES' : 'NO',
-    ]);
+    // Build a dictionary of tool -> result (e.g., "Band Saw" -> "YES/NO YES/NO")
+    const toolResults = {};
+    tools.forEach((t) => {
+      toolResults[t.tool] = `${t.quizDone ? 'Y' : 'N'}/${t.physicalDone ? 'Y' : 'N'}`;
+    });
 
-    // --- Detect the correct tab title (handles hidden spaces/case/quotes) ---
+    // Build one row: [timestamp, student, Band Saw, Drill Press, ...]
+    const row = [timestamp, student];
+    const toolOrder = [
+      'Band Saw',
+      'Drill Press',
+      'Belt Sander',
+      'Disc Sander',
+      'Horizontal Bandsaw',
+      'Table Saw',
+      'Miter Saw',
+      'Hand Drill',
+      'Soldering Station',
+      '3D Printer',
+    ];
+    toolOrder.forEach((tool) => {
+      row.push(toolResults[tool] || 'N/N'); // default N/N if missing
+    });
+
+    // Detect tab name
     const meta = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
-    const titles = (meta.data.sheets || [])
-      .map((s) => (s.properties && s.properties.title) || '')
-      .filter(Boolean);
-
-    // Prefer a tab whose title trims to "responses" (case-insensitive); else fall back to first tab
+    const titles = (meta.data.sheets || []).map((s) => s.properties?.title).filter(Boolean);
     const targetTitle =
       titles.find((t) => t.trim().toLowerCase() === 'responses') || titles[0] || 'Sheet1';
-
-    // Escape any single quotes per A1 notation
     const safeTitle = targetTitle.replace(/'/g, "''");
-    const rangeA1 = `'${safeTitle}'!A1:E`;
+    const rangeA1 = `'${safeTitle}'!A1:Z`;
 
-    // Optional debug logs (visible in Netlify → Logs → Functions → submit)
-    console.log('Sheet tabs:', titles);
-    console.log('Using tab:', targetTitle, 'Range:', rangeA1);
-
-    // --- Append rows ---
+    // Append as one row
     await sheets.spreadsheets.values.append({
       spreadsheetId: SHEET_ID,
       range: rangeA1,
       valueInputOption: 'RAW',
       insertDataOption: 'INSERT_ROWS',
-      requestBody: { values: rows },
+      requestBody: { values: [row] },
     });
 
     return { statusCode: 200, body: JSON.stringify({ ok: true }) };
   } catch (err) {
-    // Log full error for troubleshooting in Netlify function logs
     console.error('Submit function error:', err);
-    // Surface a simple message to the browser
     return { statusCode: 500, body: 'Server error' };
   }
 };
