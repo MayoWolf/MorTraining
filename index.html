@@ -5,81 +5,123 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Mor Training</title>
   <meta name="theme-color" content="#111111">
+  <style>
+    body { font-family: -apple-system, system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif; padding: 24px; line-height: 1.4; }
+    h1 { margin-top: 0; }
+    form { max-width: 720px; }
+    .row { padding: 10px 0; border-bottom: 1px solid #e5e5e5; }
+    .tool { font-weight: 700; }
+    .controls { margin-top: 16px; display: flex; gap: 12px; align-items: center; }
+    button[type="submit"] { padding: 8px 14px; border-radius: 6px; border: 1px solid #ccc; background: #111; color: #fff; cursor: pointer; }
+    button[disabled] { opacity: .6; cursor: not-allowed; }
+    #status { margin-left: 6px; }
+    .legend { color:#666; font-size: 12px; margin-top: 8px; }
+    select { padding:6px 8px; }
+    label + label { margin-left: 14px; }
+  </style>
 </head>
 <body>
   <h1>Mor Training</h1>
-  <form id="form">
+
+  <form id="form" novalidate>
     <label>Student:
-      <select id="student" required>
-        <option value="">-- choose --</option>
-        <option>Wolf Nazari</option>
-        <option>Serenity</option>
-        <option>Student A</option>
-      </select>
+      <select id="student" required></select>
     </label>
+
+    <p class="legend">Tip: each submit overwrites that student's row in the sheet (upsert).</p>
+
     <hr>
+
     <div id="tools"></div>
-    <button type="submit">Submit</button>
-    <p id="status" role="status"></p>
+
+    <div class="controls">
+      <button type="submit" id="submitBtn">Submit</button>
+      <p id="status" role="status" aria-live="polite"></p>
+    </div>
   </form>
 
-<script>
-const TOOLS = [
-  "Band Saw","Drill Press","Belt Sander","Disc Sander","Horizontal Bandsaw",
-  "Table Saw","Miter Saw","Hand Drill","Soldering Station","3D Printer"
-];
+  <script>
+    // ---- Config ----
+    const TOOLS = [
+      "Band Saw","Drill Press","Belt Sander","Disc Sander","Horizontal Bandsaw",
+      "Table Saw","Miter Saw","Hand Drill","Soldering Station","3D Printer"
+    ];
 
-const toolsDiv = document.getElementById('tools');
-TOOLS.forEach((tool,i)=>{
-  const wrap = document.createElement('div');
-  wrap.innerHTML = `
-    <div style="padding:8px 0;border-bottom:1px solid #ddd">
-      <b>${tool}</b><br>
-      <label><input type="checkbox" id="quiz${i}"> Quiz done</label>
-      <label style="margin-left:12px"><input type="checkbox" id="phys${i}"> Physical done</label>
-    </div>
-  `;
-  toolsDiv.appendChild(wrap);
-});
+    // Build student1..student30
+    const STUDENTS = Array.from({ length: 30 }, (_, i) => `student${i + 1}`);
+    const studentSel = document.getElementById('student');
+    studentSel.innerHTML = '<option value="">-- choose --</option>' +
+      STUDENTS.map(s => `<option value="${s}">${s}</option>`).join('');
 
-document.getElementById('form').onsubmit = async (e)=>{
-  e.preventDefault();
-  const status = document.getElementById('status');
-  status.textContent = "Submitting...";
-  const student = document.getElementById('student').value;
-  const payload = {
-    student,
-    timestamp: new Date().toISOString(),
-    tools: TOOLS.map((t,i)=>({
-      tool: t,
-      quizDone: document.getElementById(`quiz${i}`).checked,
-      physicalDone: document.getElementById(`phys${i}`).checked
-    }))
-  };
-  try {
-    const res = await fetch('/.netlify/functions/submit',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(payload)
+    // Render tool checklist
+    const toolsDiv = document.getElementById('tools');
+    TOOLS.forEach((tool, i) => {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML = `
+        <div class="tool">${tool}</div>
+        <label><input type="checkbox" id="quiz${i}"> Quiz done</label>
+        <label><input type="checkbox" id="phys${i}"> Physical done</label>
+      `;
+      toolsDiv.appendChild(row);
     });
-    if(res.ok){
-      status.textContent = "Submitted!";
-      e.target.reset();
-    } else {
-      const txt = await res.text();
-      status.textContent = "Error: " + txt;
-    }
-  } catch(err){
-    status.textContent = "Error submitting.";
-  }
-};
 
-// Optional PWA: register service worker if present
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/public/service-worker.js');
-  });
-}
-</script>
+    // Submit handler
+    document.getElementById('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const status = document.getElementById('status');
+      const btn = document.getElementById('submitBtn');
+      const student = studentSel.value;
+
+      if (!student) {
+        status.textContent = 'Pick a student first.';
+        return;
+      }
+
+      const payload = {
+        student,
+        timestamp: new Date().toISOString(),
+        tools: TOOLS.map((t, i) => ({
+          tool: t,
+          quizDone: document.getElementById(`quiz${i}`).checked,
+          physicalDone: document.getElementById(`phys${i}`).checked
+        }))
+      };
+
+      try {
+        status.textContent = 'Submitting…';
+        btn.disabled = true;
+
+        const res = await fetch('/.netlify/functions/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+          status.textContent = `Saved for ${student}.`;
+          // keep the selected student, but clear checkboxes
+          TOOLS.forEach((_, i) => {
+            document.getElementById(`quiz${i}`).checked = false;
+            document.getElementById(`phys${i}`).checked = false;
+          });
+        } else {
+          const txt = await res.text().catch(() => 'Unknown error');
+          status.textContent = `Error: ${txt}`;
+        }
+      } catch (err) {
+        status.textContent = 'Network error.';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    // Optional PWA: register service worker if present
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/public/service-worker.js').catch(()=>{});
+      });
+    }
+  </script>
 </body>
 </html>
