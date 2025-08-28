@@ -34,12 +34,13 @@ export const handler = async (event) => {
     ]);
 
     await sheets.spreadsheets.values.append({
-      spreadsheetId: SHEET_ID,
-      range: 'Responses!A:E',
-      valueInputOption: 'RAW',
-      insertDataOption: 'INSERT_ROWS',
-      requestBody: { values: rows }
-    });
+  spreadsheetId: SHEET_ID,
+  range: "'Responses'!A:E",   // <-- add single quotes around Responses
+  valueInputOption: "RAW",
+  insertDataOption: "INSERT_ROWS",
+  requestBody: { values: rows }
+});
+
 
     return { statusCode: 200, body: JSON.stringify({ ok: true }) };
   } catch(err){
