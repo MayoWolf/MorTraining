@@ -1,0 +1,85 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mor Training</title>
+  <meta name="theme-color" content="#111111">
+</head>
+<body>
+  <h1>Mor Training</h1>
+  <form id="form">
+    <label>Student:
+      <select id="student" required>
+        <option value="">-- choose --</option>
+        <option>Wolf Nazari</option>
+        <option>Serenity</option>
+        <option>Student A</option>
+      </select>
+    </label>
+    <hr>
+    <div id="tools"></div>
+    <button type="submit">Submit</button>
+    <p id="status" role="status"></p>
+  </form>
+
+<script>
+const TOOLS = [
+  "Band Saw","Drill Press","Belt Sander","Disc Sander","Horizontal Bandsaw",
+  "Table Saw","Miter Saw","Hand Drill","Soldering Station","3D Printer"
+];
+
+const toolsDiv = document.getElementById('tools');
+TOOLS.forEach((tool,i)=>{
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div style="padding:8px 0;border-bottom:1px solid #ddd">
+      <b>${tool}</b><br>
+      <label><input type="checkbox" id="quiz${i}"> Quiz done</label>
+      <label style="margin-left:12px"><input type="checkbox" id="phys${i}"> Physical done</label>
+    </div>
+  `;
+  toolsDiv.appendChild(wrap);
+});
+
+document.getElementById('form').onsubmit = async (e)=>{
+  e.preventDefault();
+  const status = document.getElementById('status');
+  status.textContent = "Submitting...";
+  const student = document.getElementById('student').value;
+  const payload = {
+    student,
+    timestamp: new Date().toISOString(),
+    tools: TOOLS.map((t,i)=>({
+      tool: t,
+      quizDone: document.getElementById(`quiz${i}`).checked,
+      physicalDone: document.getElementById(`phys${i}`).checked
+    }))
+  };
+  try {
+    const res = await fetch('/.netlify/functions/submit',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if(res.ok){
+      status.textContent = "Submitted!";
+      e.target.reset();
+    } else {
+      const txt = await res.text();
+      status.textContent = "Error: " + txt;
+    }
+  } catch(err){
+    status.textContent = "Error submitting.";
+  }
+};
+
+// Optional PWA: register service worker if present
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/public/service-worker.js');
+  });
+}
+</script>
+</body>
+</html>
