@@ -26,39 +26,43 @@ export const handler = async (event) => {
     );
     const sheets = google.sheets({ version: 'v4', auth: jwt });
 
-    // Build a dictionary of tool -> result (e.g., "Band Saw" -> "YES/NO YES/NO")
+    // Map tool -> "Y/N" format
     const toolResults = {};
     tools.forEach((t) => {
       toolResults[t.tool] = `${t.quizDone ? 'Y' : 'N'}/${t.physicalDone ? 'Y' : 'N'}`;
     });
 
-    // Build one row: [timestamp, student, Band Saw, Drill Press, ...]
-    const row = [timestamp, student];
-    const toolOrder = [
+    // Match EXACT header order in your sheet
+    const headerOrder = [
+      'Timestamp',
+      'Student',
       'Band Saw',
       'Drill Press',
       'Belt Sander',
       'Disc Sander',
-      'Horizontal Bandsaw',
       'Table Saw',
       'Miter Saw',
       'Hand Drill',
       'Soldering Station',
-      '3D Printer',
+      '3D Printer'
     ];
-    toolOrder.forEach((tool) => {
-      row.push(toolResults[tool] || 'N/N'); // default N/N if missing
+
+    // Build row aligned with headers
+    const row = headerOrder.map((h) => {
+      if (h === 'Timestamp') return timestamp;
+      if (h === 'Student') return student;
+      return toolResults[h] || ''; // tool columns
     });
 
-    // Detect tab name
+    // Detect tab
     const meta = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
     const titles = (meta.data.sheets || []).map((s) => s.properties?.title).filter(Boolean);
     const targetTitle =
       titles.find((t) => t.trim().toLowerCase() === 'responses') || titles[0] || 'Sheet1';
     const safeTitle = targetTitle.replace(/'/g, "''");
-    const rangeA1 = `'${safeTitle}'!A1:Z`;
+    const rangeA1 = `'${safeTitle}'!A:Z`;
 
-    // Append as one row
+    // Append
     await sheets.spreadsheets.values.append({
       spreadsheetId: SHEET_ID,
       range: rangeA1,
