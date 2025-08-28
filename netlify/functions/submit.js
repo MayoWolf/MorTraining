@@ -17,6 +17,7 @@ export const handler = async (event) => {
       return { statusCode: 500, body: 'Missing env vars' };
     }
 
+    // Auth
     const creds = JSON.parse(credsJson);
     const jwt = new google.auth.JWT(
       creds.client_email,
@@ -26,44 +27,72 @@ export const handler = async (event) => {
     );
     const sheets = google.sheets({ version: 'v4', auth: jwt });
 
-    // Always build row in fixed column order
-    const toolResults = {};
-    tools.forEach((t) => {
-      toolResults[t.tool] = `${t.quizDone ? 'Y' : 'N'}/${t.physicalDone ? 'Y' : 'N'}`;
+    // Build tool results Y/N per tool
+    const toolMap = {};
+    tools.forEach(t => {
+      toolMap[t.tool] = `${t.quizDone ? 'Y' : 'N'}/${t.physicalDone ? 'Y' : 'N'}`;
     });
 
-    // Force to start at col A
+    // Row shape (11 columns): A..K
     const row = [
-      timestamp,        // Column A
-      student,          // Column B
-      toolResults['Band Saw'] || 'N/N',
-      toolResults['Drill Press'] || 'N/N',
-      toolResults['Belt Sander'] || 'N/N',
-      toolResults['Disc Sander'] || 'N/N',
-      toolResults['Table Saw'] || 'N/N',
-      toolResults['Miter Saw'] || 'N/N',
-      toolResults['Hand Drill'] || 'N/N',
-      toolResults['Soldering Station'] || 'N/N',
-      toolResults['3D Printer'] || 'N/N'
+      timestamp,                              // A  Latest Time Stamp
+      student,                                // B  Student
+      toolMap['Band Saw']            || 'N/N',// C
+      toolMap['Drill Press']         || 'N/N',// D
+      toolMap['Belt Sander']         || 'N/N',// E
+      toolMap['Disc Sander']         || 'N/N',// F
+      toolMap['Table Saw']           || 'N/N',// G
+      toolMap['Miter Saw']           || 'N/N',// H
+      toolMap['Hand Drill']          || 'N/N',// I
+      toolMap['Soldering Station']   || 'N/N',// J
+      toolMap['3D Printer']          || 'N/N' // K
     ];
 
-    // Detect correct sheet
+    // Find the sheet tab safely
     const meta = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
     const titles = (meta.data.sheets || []).map(s => s.properties?.title).filter(Boolean);
     const targetTitle =
       titles.find(t => t.trim().toLowerCase() === 'responses') || titles[0] || 'Sheet1';
     const safeTitle = targetTitle.replace(/'/g, "''");
 
-    // Explicit range starting at column A
-    const rangeA1 = `'${safeTitle}'!A:K`; // A through K, covers 11 cols
-
-    await sheets.spreadsheets.values.append({
+    // Read existing rows (skip header row 1)
+    const readRange = `'${safeTitle}'!A2:K`;
+    const getRes = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
-      range: rangeA1,
-      valueInputOption: 'RAW',
-      insertDataOption: 'INSERT_ROWS',
-      requestBody: { values: [row] },
+      range: readRange
     });
+    const values = getRes.data.values || [];
+
+    // Look for existing row where column B (index 1) === student
+    let foundRowNumber = null; // 1-based sheet row number
+    for (let i = 0; i < values.length; i++) {
+      const existingStudent = (values[i][1] || '').trim();
+      if (existingStudent.toLowerCase() === student.trim().toLowerCase()) {
+        foundRowNumber = i + 2; // +2 because A2 is values[0]
+        break;
+      }
+    }
+
+    if (foundRowNumber) {
+      // UPDATE existing row
+      const updateRange = `'${safeTitle}'!A${foundRowNumber}:K${foundRowNumber}`;
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID,
+        range: updateRange,
+        valueInputOption: 'RAW',
+        requestBody: { values: [row] }
+      });
+    } else {
+      // APPEND new row (first time this student submits)
+      const appendRange = `'${safeTitle}'!A:K`;
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SHEET_ID,
+        range: appendRange,
+        valueInputOption: 'RAW',
+        insertDataOption: 'INSERT_ROWS',
+        requestBody: { values: [row] }
+      });
+    }
 
     return { statusCode: 200, body: JSON.stringify({ ok: true }) };
   } catch (err) {
