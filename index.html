@@ -148,8 +148,9 @@
 <script>
   // ---- Data ----
   const TOOLS = [
-    "Band Saw","Drill Press","Belt Sander","Disc Sander","Horizontal Bandsaw",
+    "Band Saw","Drill Press","Belt Sander","Disc Sander",
     "Table Saw","Miter Saw","Hand Drill","Soldering Station","3D Printer"
+    // If you want Horizontal Bandsaw in the compact sheet, add it here AND to the backend orders.
   ];
   const STUDENTS = Array.from({length:30}, (_,i)=>`student${i+1}`);
 
@@ -186,10 +187,47 @@
     toolsDiv.appendChild(el);
   });
 
-  // ---- Submit logic ----
   const statusEl = document.getElementById('status');
   const btn = document.getElementById('submitBtn');
 
+  function status(msg, kind){
+    statusEl.textContent = msg || '';
+    statusEl.classList.toggle('ok', kind==='ok');
+    statusEl.classList.toggle('err', kind==='err');
+  }
+
+  // ---- NEW: Load existing values when student changes ----
+  studentSel.addEventListener('change', async () => {
+    const s = studentSel.value;
+    // Clear toggles first
+    TOOLS.forEach((_, i) => {
+      document.getElementById(`quiz${i}`).checked = false;
+      document.getElementById(`phys${i}`).checked = false;
+    });
+    if (!s) { status(''); return; }
+
+    try {
+      status('Loading saved progress…');
+      const res = await fetch(`/.netlify/functions/get?student=${encodeURIComponent(s)}`);
+      if (!res.ok) throw new Error('Fetch failed');
+      const data = await res.json();
+
+      if (data.found && Array.isArray(data.tools)) {
+        // data.tools is ordered to match TOOLS
+        data.tools.forEach((t, i) => {
+          document.getElementById(`quiz${i}`).checked = !!t.quizDone;
+          document.getElementById(`phys${i}`).checked = !!t.physicalDone;
+        });
+        status('Loaded saved progress.', 'ok');
+      } else {
+        status('No saved progress yet.'); // new student or empty row
+      }
+    } catch {
+      status('Could not load saved progress.', 'err');
+    }
+  });
+
+  // ---- Submit logic (upsert) ----
   document.getElementById('form').addEventListener('submit', async (e)=>{
     e.preventDefault();
     const student = studentSel.value;
@@ -226,13 +264,7 @@
     }
   });
 
-  function status(msg, kind){
-    statusEl.textContent = msg || '';
-    statusEl.classList.toggle('ok', kind==='ok');
-    statusEl.classList.toggle('err', kind==='err');
-  }
-
-  // (Optional) Disable SW while iterating fast. Re-enable later if you want offline.
+  // (Optional) Service worker registration disabled during rapid iteration.
   // if ('serviceWorker' in navigator) {
   //   window.addEventListener('load', () => {
   //     navigator.serviceWorker.register('/public/service-worker.js').catch(()=>{});
