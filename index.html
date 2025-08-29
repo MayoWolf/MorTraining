@@ -21,20 +21,27 @@
 <meta name="theme-color" content="#0b0f14" />
 
 <style>
-  :root{
-    --bg:#0b0f14; --bg-2:#0e141b; --card:rgba(255,255,255,.06);
-    --card-border:rgba(255,255,255,.12); --text:#e8eef6; --muted:#a7b4c6;
-    --accent:#6ee7ff; --accent-2:#89ffbf; --danger:#ff6b6b; --ok:#5cff85;
-    --ring:rgba(109,236,255,.6); --shadow:0 20px 40px rgba(0,0,0,.35);
-    --radius:18px;
-  }
-  @media (prefers-color-scheme: light){
-    :root{
-      --bg:#eef3f8; --bg-2:#e5edf6; --card:rgba(255,255,255,.75);
-      --card-border:rgba(10,20,30,.08); --text:#0b1220; --muted:#475466;
-      --ring:rgba(0,133,255,.35); --shadow:0 20px 40px rgba(9,30,66,.15);
-    }
-  }
+:root {
+  /* Dark mode defaults */
+  --accent: #ff7a00;        /* bright orange */
+  --accent-2: #ff9c33;      /* lighter orange gradient */
+  --bg: #0b0b0b;            /* near-black background */
+  --card-bg: rgba(255,255,255,.05);
+  --card-border: rgba(255,255,255,.12);
+  --text: #f7f7f7;          /* light text */
+  --muted: #aaaaaa;         /* muted gray text */
+}
+
+.light {
+  /* Light mode overrides */
+  --accent: #ff7a00;        /* same orange */
+  --accent-2: #ff9c33;      /* same lighter orange */
+  --bg: #ffffff;            /* white background */
+  --card-bg: rgba(0,0,0,.03);
+  --card-border: rgba(0,0,0,.1);
+  --text: #111111;          /* dark text */
+  --muted: #555555;
+}
   body{
     margin:0; color:var(--text);
     font-family: ui-rounded, SF Pro Rounded, SF Pro Display, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
