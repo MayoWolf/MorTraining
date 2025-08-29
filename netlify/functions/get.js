@@ -3,10 +3,8 @@ import { google } from 'googleapis';
 
 export const handler = async (event) => {
   try {
-    const student = event.queryStringParameters?.student || "";
-    if (!student) {
-      return { statusCode: 400, body: JSON.stringify({ error: "Missing student" }) };
-    }
+    const studentQuery = (event.queryStringParameters?.student || "").trim();
+    if (!studentQuery) return ok({ found: false, tools: [] });
 
     const creds = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT);
     const SHEET_ID = process.env.SHEET_ID;
@@ -19,66 +17,77 @@ export const handler = async (event) => {
     );
     const sheets = google.sheets({ version: 'v4', auth: jwt });
 
-    // Read a wide range so we cover all current/future columns
+    // Read wide so future columns don't break us
     const resp = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
-      range: "'Responses'!A:Z",           // ← was A:E; now read everything we need
+      range: "'Responses'!A:Z",   // make sure your tab is named exactly "Responses"
     });
 
     const rows = resp.data.values || [];
-    if (rows.length < 2) {
-      return ok({ found: false, tools: [] });
-    }
+    if (rows.length < 2) return ok({ found: false, tools: [] });
 
     const header = rows[0];
 
-    // Find the Student column by name (tolerant of "Student (First Last)")
+    // Find the Student column (handles "Student", "Student (First Last)", etc.)
     const studentIdx = header.findIndex(h =>
-      String(h).trim().toLowerCase().startsWith('student')
+      String(h || "").trim().toLowerCase().startsWith("student")
     );
-    if (studentIdx === -1) {
-      // If we can't find a student column, return empty but don't hard error
-      return ok({ found: false, tools: [] });
-    }
+    if (studentIdx === -1) return ok({ found: false, tools: [] });
 
-    // Tools are everything after the Student column
+    // Tools = everything to the right of the Student column
     const toolHeaders = header.slice(studentIdx + 1);
 
-    // Find all rows matching this student
-    const dataRows = rows.slice(1);
-    const matches = dataRows.filter(r => (r[studentIdx] || '').trim() === student);
+    // Helper to check if a row has ANY tool value filled in
+    const hasAnyToolData = (row) => {
+      for (let i = 0; i < toolHeaders.length; i++) {
+        const cell = (row[studentIdx + 1 + i] || "").toString().trim();
+        if (cell) return true;
+      }
+      return false;
+    };
 
-    if (matches.length === 0) {
+    // Normalize the student name for comparison
+    const target = studentQuery.toLowerCase();
+
+    // Scan from bottom to top to find most recent row that:
+    // - matches the student (case-insensitive, trimmed)
+    // - has at least one tool cell filled
+    let latest = null;
+    for (let r = rows.length - 1; r >= 1; r--) {
+      const row = rows[r] || [];
+      const name = (row[studentIdx] || "").toString().trim().toLowerCase();
+      if (name === target && hasAnyToolData(row)) {
+        latest = row;
+        break;
+      }
+    }
+
+    if (!latest) {
+      // No saved tool data yet for this student (roster only)
       return ok({ found: false, tools: [] });
     }
 
-    // Use the last matching row (latest)
-    const latest = matches[matches.length - 1];
-
-    // Map tool values: each cell is expected like "Y/N", "N/Y", etc.
+    // Map tool cells to {quizDone, physicalDone}
     const tools = toolHeaders.map((toolName, i) => {
-      const cell = latest[studentIdx + 1 + i] || 'N/N';  // safe fallback
-      // Normalize value and read positions; supports "Y/N" or "YES/NO"
-      const v = String(cell).trim().toUpperCase();
-      const yesNo = v.replace(/\s+/g,'');                // remove spaces
-      const quizDone     = yesNo.startsWith('Y');        // first flag
-      const physicalDone = yesNo.endsWith('Y');          // second flag
+      const raw = (latest[studentIdx + 1 + i] || "N/N").toString().trim().toUpperCase();
+      // Accept "Y/N", "N/Y", "YES/NO", "NO/YES" etc.
+      const cleaned = raw.replace(/\s+/g, "");
+      const quizDone     = cleaned.startsWith("Y");
+      const physicalDone = cleaned.endsWith("Y");
       return { tool: toolName, quizDone, physicalDone };
     });
 
     return ok({ found: true, tools });
   } catch (err) {
-    console.error('get.js error:', err);
-    // Return a 200 with empty shape so the UI doesn't show "network issue"
+    console.error("get.js error:", err);
     return ok({ found: false, tools: [] });
   }
 };
 
-// Helper to always send JSON 200
-function ok(obj) {
+function ok(body) {
   return {
     statusCode: 200,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(obj),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   };
 }
