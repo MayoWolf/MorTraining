@@ -1,13 +1,11 @@
+// netlify/functions/get.js
 import { google } from 'googleapis';
 
 export const handler = async (event) => {
   try {
-    const student = event.queryStringParameters.student;
+    const student = event.queryStringParameters?.student || "";
     if (!student) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ error: 'Missing student' }),
-      };
+      return { statusCode: 400, body: JSON.stringify({ error: "Missing student" }) };
     }
 
     const creds = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT);
@@ -21,55 +19,66 @@ export const handler = async (event) => {
     );
     const sheets = google.sheets({ version: 'v4', auth: jwt });
 
-    // Read whole sheet
+    // Read a wide range so we cover all current/future columns
     const resp = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
-      range: "'Responses'!A:E",
+      range: "'Responses'!A:Z",           // ← was A:E; now read everything we need
     });
 
     const rows = resp.data.values || [];
     if (rows.length < 2) {
-      return {
-        statusCode: 200,
-        body: JSON.stringify({ found: false, tools: [] }),
-      };
+      return ok({ found: false, tools: [] });
     }
 
-    // Find the latest row for this student
     const header = rows[0];
-    const studentIdx = header.indexOf('Student');
-    const toolCols = header.slice(2); // everything after Student
-    const matching = rows.filter(r => r[studentIdx] === student);
 
-    if (!matching.length) {
-      return {
-        statusCode: 200,
-        body: JSON.stringify({ found: false, tools: [] }),
-      };
+    // Find the Student column by name (tolerant of "Student (First Last)")
+    const studentIdx = header.findIndex(h =>
+      String(h).trim().toLowerCase().startsWith('student')
+    );
+    if (studentIdx === -1) {
+      // If we can't find a student column, return empty but don't hard error
+      return ok({ found: false, tools: [] });
     }
 
-    const latest = matching[matching.length - 1];
+    // Tools are everything after the Student column
+    const toolHeaders = header.slice(studentIdx + 1);
 
-    const tools = toolCols.map((t, i) => {
-      const val = latest[i + 2] || 'N/N'; // fallback
-      return {
-        tool: t,
-        quizDone: val.startsWith('Y'),
-        physicalDone: val.endsWith('Y'),
-      };
+    // Find all rows matching this student
+    const dataRows = rows.slice(1);
+    const matches = dataRows.filter(r => (r[studentIdx] || '').trim() === student);
+
+    if (matches.length === 0) {
+      return ok({ found: false, tools: [] });
+    }
+
+    // Use the last matching row (latest)
+    const latest = matches[matches.length - 1];
+
+    // Map tool values: each cell is expected like "Y/N", "N/Y", etc.
+    const tools = toolHeaders.map((toolName, i) => {
+      const cell = latest[studentIdx + 1 + i] || 'N/N';  // safe fallback
+      // Normalize value and read positions; supports "Y/N" or "YES/NO"
+      const v = String(cell).trim().toUpperCase();
+      const yesNo = v.replace(/\s+/g,'');                // remove spaces
+      const quizDone     = yesNo.startsWith('Y');        // first flag
+      const physicalDone = yesNo.endsWith('Y');          // second flag
+      return { tool: toolName, quizDone, physicalDone };
     });
 
-    return {
-      statusCode: 200,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ found: true, tools }),
-    };
+    return ok({ found: true, tools });
   } catch (err) {
-    console.error(err);
-    return {
-      statusCode: 200, // still return 200 so frontend doesn't freak out
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ found: false, tools: [] }),
-    };
+    console.error('get.js error:', err);
+    // Return a 200 with empty shape so the UI doesn't show "network issue"
+    return ok({ found: false, tools: [] });
   }
 };
+
+// Helper to always send JSON 200
+function ok(obj) {
+  return {
+    statusCode: 200,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(obj),
+  };
+}
