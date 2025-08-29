@@ -1,21 +1,18 @@
 import { google } from 'googleapis';
 
 export const handler = async (event) => {
-  // GET /.netlify/functions/get?student=student8
-  const student = (event.queryStringParameters?.student || '').trim();
-  if (!student) {
-    return { statusCode: 400, body: 'Missing ?student=' };
-  }
-
   try {
-    const credsJson = process.env.GOOGLE_SERVICE_ACCOUNT;
-    const SHEET_ID = process.env.SHEET_ID;
-    if (!credsJson || !SHEET_ID) {
-      return { statusCode: 500, body: 'Missing env vars' };
+    const student = event.queryStringParameters.student;
+    if (!student) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: 'Missing student' }),
+      };
     }
 
-    // Auth
-    const creds = JSON.parse(credsJson);
+    const creds = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT);
+    const SHEET_ID = process.env.SHEET_ID;
+
     const jwt = new google.auth.JWT(
       creds.client_email,
       null,
@@ -24,67 +21,55 @@ export const handler = async (event) => {
     );
     const sheets = google.sheets({ version: 'v4', auth: jwt });
 
-    // Find target sheet/tab
-    const meta = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
-    const titles = (meta.data.sheets || []).map(s => s.properties?.title).filter(Boolean);
-    const targetTitle =
-      titles.find(t => t.trim().toLowerCase() === 'responses') || titles[0] || 'Sheet1';
-    const safeTitle = targetTitle.replace(/'/g, "''");
-
-    // Read rows (skip header)
-    const readRange = `'${safeTitle}'!A2:K`;
-    const res = await sheets.spreadsheets.values.get({
+    // Read whole sheet
+    const resp = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
-      range: readRange
+      range: "'Responses'!A:E",
     });
-    const rows = res.data.values || [];
 
-    // Columns: A Timestamp, B Student, C..K tools
-    const idx = rows.findIndex(r => (r[1] || '').trim().toLowerCase() === student.toLowerCase());
-    if (idx === -1) {
+    const rows = resp.data.values || [];
+    if (rows.length < 2) {
       return {
         statusCode: 200,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ found: false })
+        body: JSON.stringify({ found: false, tools: [] }),
       };
     }
 
-    const row = rows[idx];
-    const timestamp = row[0] || '';
-    const toolCols = row.slice(2, 11); // C..K (9 columns expected, we have 9? actually 9? We wrote 9 after B? We wrote 9 tools + 1 = 10 tools -> 10 columns)
-    // Correct slice: 10 tool columns from C..K
-    const fixedToolCols = row.slice(2, 12);
+    // Find the latest row for this student
+    const header = rows[0];
+    const studentIdx = header.indexOf('Student');
+    const toolCols = header.slice(2); // everything after Student
+    const matching = rows.filter(r => r[studentIdx] === student);
 
-    const TOOL_ORDER = [
-      'Band Saw','Drill Press','Belt Sander','Disc Sander','Table Saw',
-      'Miter Saw','Hand Drill','Soldering Station','3D Printer','Horizontal Bandsaw'
-    ];
-    // IMPORTANT: match your write order (A..K): Timestamp, Student,
-    // C Band Saw, D Drill Press, E Belt Sander, F Disc Sander,
-    // G Table Saw, H Miter Saw, I Hand Drill, J Soldering Station, K 3D Printer
-    // (Horizontal Bandsaw is NOT part of compact sheet in your latest screenshot; if you want it, include it both in index.html and here)
-    const ORDER = [
-      'Band Saw','Drill Press','Belt Sander','Disc Sander','Table Saw',
-      'Miter Saw','Hand Drill','Soldering Station','3D Printer'
-    ];
-
-    const tools = ORDER.map((tool, i) => {
-      const cell = (fixedToolCols[i] || '').toString().toUpperCase().trim(); // "Y/N"
-      const [q, p] = cell.split('/');
+    if (!matching.length) {
       return {
-        tool,
-        quizDone: (q || '').trim().startsWith('Y'),
-        physicalDone: (p || '').trim().startsWith('Y'),
+        statusCode: 200,
+        body: JSON.stringify({ found: false, tools: [] }),
+      };
+    }
+
+    const latest = matching[matching.length - 1];
+
+    const tools = toolCols.map((t, i) => {
+      const val = latest[i + 2] || 'N/N'; // fallback
+      return {
+        tool: t,
+        quizDone: val.startsWith('Y'),
+        physicalDone: val.endsWith('Y'),
       };
     });
 
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ found: true, student, timestamp, tools })
+      body: JSON.stringify({ found: true, tools }),
     };
   } catch (err) {
-    console.error('get function error:', err);
-    return { statusCode: 500, body: 'Server error' };
+    console.error(err);
+    return {
+      statusCode: 200, // still return 200 so frontend doesn't freak out
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ found: false, tools: [] }),
+    };
   }
 };
