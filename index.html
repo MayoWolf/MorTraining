@@ -21,26 +21,45 @@
 <meta name="theme-color" content="#0b0f14" />
 
 <style>
-:root {
-  /* Dark mode defaults */
-  --accent: #ff7a00;        /* bright orange */
-  --accent-2: #ff9c33;      /* lighter orange gradient */
-  --bg: #0b0b0b;            /* near-black background */
-  --card-bg: rgba(255,255,255,.05);
-  --card-border: rgba(255,255,255,.12);
-  --text: #f7f7f7;          /* light text */
-  --muted: #aaaaaa;         /* muted gray text */
+:root{
+  /* DARK MODE (default) */
+  --bg:#0b0b0b; 
+  --bg-2:#121212; 
+  --card:rgba(255,255,255,.06);
+  --card-border:rgba(255,255,255,.12); 
+  --text:#f4f6f8; 
+  --muted:#b4bdc7;
+
+  /* accents -> orange */
+  --accent:#ff7a00; 
+  --accent-2:#ff9c33;
+
+  /* status colors */
+  --danger:#ff6b6b; 
+  --ok:#5cff85;
+
+  /* focus + shadows */
+  --ring:rgba(255,122,0,.45); 
+  --shadow:0 20px 40px rgba(0,0,0,.35);
+  --radius:18px;
 }
 
-.light {
-  /* Light mode overrides */
-  --accent: #ff7a00;        /* same orange */
-  --accent-2: #ff9c33;      /* same lighter orange */
-  --bg: #ffffff;            /* white background */
-  --card-bg: rgba(0,0,0,.03);
-  --card-border: rgba(0,0,0,.1);
-  --text: #111111;          /* dark text */
-  --muted: #555555;
+@media (prefers-color-scheme: light){
+  :root{
+    --bg:#ffffff; 
+    --bg-2:#f6f6f6; 
+    --card:rgba(255,255,255,.85);
+    --card-border:rgba(0,0,0,.08); 
+    --text:#121212; 
+    --muted:#5a6572;
+
+    /* keep orange accents */
+    --accent:#ff7a00; 
+    --accent-2:#ff9c33;
+
+    --ring:rgba(255,122,0,.35); 
+    --shadow:0 20px 40px rgba(9,30,66,.12);
+  }
 }
   body{
     margin:0; color:var(--text);
