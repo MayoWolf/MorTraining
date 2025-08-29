@@ -39,13 +39,11 @@ export const handler = async (event) => {
       student,                                // B  Student
       toolMap['Band Saw']            || 'N/N',// C
       toolMap['Drill Press']         || 'N/N',// D
-      toolMap['Belt Sander']         || 'N/N',// E
-      toolMap['Disc Sander']         || 'N/N',// F
-      toolMap['Table Saw']           || 'N/N',// G
-      toolMap['Miter Saw']           || 'N/N',// H
-      toolMap['Hand Drill']          || 'N/N',// I
-      toolMap['Soldering Station']   || 'N/N',// J
-      toolMap['3D Printer']          || 'N/N' // K
+      toolMap['Hand Drill']          || 'N/N',// E
+      toolMap['Sander']              || 'N/N',// F
+      toolMap['Mighter Saw']         || 'N/N',// G
+      toolMap['Lazer Cutter']        || 'N/N',// H
+      toolMap['CAD']                 || 'N/N',// I
     ];
 
     // Find the sheet tab safely
