@@ -17,77 +17,101 @@ export const handler = async (event) => {
     );
     const sheets = google.sheets({ version: 'v4', auth: jwt });
 
-    // Read wide so future columns don't break us
+    // 1) List all tabs
+    const meta = await sheets.spreadsheets.get({
+      spreadsheetId: SHEET_ID,
+      fields: 'sheets(properties(title))'
+    });
+    const titles = (meta.data.sheets || [])
+      .map(s => s.properties?.title)
+      .filter(Boolean);
+
+    // 2) Find the first tab whose header row has a "Student…" column
+    let chosenTitle = null;
+    let header = null;
+    let studentIdx = -1;
+
+    for (const title of titles) {
+      const hdrResp = await sheets.spreadsheets.values.get({
+        spreadsheetId: SHEET_ID,
+        range: `'${title}'!1:1`,  // first row only
+      });
+      const row = hdrResp.data.values?.[0] || [];
+      const idx = row.findIndex(h =>
+        String(h || '').trim().toLowerCase().startsWith('student')
+      );
+      if (idx !== -1 && row.length > idx + 1) {
+        chosenTitle = title;
+        header = row;
+        studentIdx = idx;
+        break; // take the first qualifying tab
+      }
+    }
+
+    if (!chosenTitle) {
+      // No tab looks like the compact sheet; fail gracefully
+      return ok({ found: false, tools: [] });
+    }
+
+    // 3) Read the chosen tab (wide)
     const resp = await sheets.spreadsheets.values.get({
       spreadsheetId: SHEET_ID,
-      range: "'Responses'!A:Z",   // make sure your tab is named exactly "Responses"
+      range: `'${chosenTitle}'!A:Z`,
     });
 
     const rows = resp.data.values || [];
     if (rows.length < 2) return ok({ found: false, tools: [] });
 
-    const header = rows[0];
-
-    // Find the Student column (handles "Student", "Student (First Last)", etc.)
-    const studentIdx = header.findIndex(h =>
-      String(h || "").trim().toLowerCase().startsWith("student")
-    );
-    if (studentIdx === -1) return ok({ found: false, tools: [] });
-
-    // Tools = everything to the right of the Student column
+    // tools are all headers to the right of the "Student…" column
     const toolHeaders = header.slice(studentIdx + 1);
 
-    // Helper to check if a row has ANY tool value filled in
+    // helper: does a row have any tool cell filled?
     const hasAnyToolData = (row) => {
       for (let i = 0; i < toolHeaders.length; i++) {
-        const cell = (row[studentIdx + 1 + i] || "").toString().trim();
+        const cell = (row[studentIdx + 1 + i] || '').toString().trim();
         if (cell) return true;
       }
       return false;
     };
 
-    // Normalize the student name for comparison
     const target = studentQuery.toLowerCase();
 
-    // Scan from bottom to top to find most recent row that:
-    // - matches the student (case-insensitive, trimmed)
-    // - has at least one tool cell filled
+    // 4) Scan from bottom to top for the latest row with data for that student
     let latest = null;
     for (let r = rows.length - 1; r >= 1; r--) {
       const row = rows[r] || [];
-      const name = (row[studentIdx] || "").toString().trim().toLowerCase();
+      const name = (row[studentIdx] || '').toString().trim().toLowerCase();
       if (name === target && hasAnyToolData(row)) {
         latest = row;
         break;
       }
     }
 
-    if (!latest) {
-      // No saved tool data yet for this student (roster only)
-      return ok({ found: false, tools: [] });
-    }
+    if (!latest) return ok({ found: false, tools: [] });
 
-    // Map tool cells to {quizDone, physicalDone}
+    // 5) Map tool cells into flags (supports Y/N, YES/NO, etc.)
     const tools = toolHeaders.map((toolName, i) => {
-      const raw = (latest[studentIdx + 1 + i] || "N/N").toString().trim().toUpperCase();
-      // Accept "Y/N", "N/Y", "YES/NO", "NO/YES" etc.
-      const cleaned = raw.replace(/\s+/g, "");
-      const quizDone     = cleaned.startsWith("Y");
-      const physicalDone = cleaned.endsWith("Y");
-      return { tool: toolName, quizDone, physicalDone };
+      const raw = (latest[studentIdx + 1 + i] || 'N/N').toString().trim().toUpperCase();
+      const v = raw.replace(/\s+/g, '');
+      return {
+        tool: toolName,
+        quizDone: v.startsWith('Y'),
+        physicalDone: v.endsWith('Y'),
+      };
     });
 
     return ok({ found: true, tools });
   } catch (err) {
-    console.error("get.js error:", err);
+    console.error('get.js error:', err);
     return ok({ found: false, tools: [] });
   }
 };
 
+// Always return JSON 200 so the UI stays calm
 function ok(body) {
   return {
     statusCode: 200,
-    headers: { "Content-Type": "application/json" },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   };
 }
