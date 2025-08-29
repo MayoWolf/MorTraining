@@ -286,36 +286,42 @@
     statusEl.classList.toggle('err', kind==='err');
   }
 
-  // ---- NEW: Load existing values when student changes ----
-  studentSel.addEventListener('change', async () => {
-    const s = studentSel.value;
-    // Clear toggles first
-    TOOLS.forEach((_, i) => {
-      document.getElementById(`quiz${i}`).checked = false;
-      document.getElementById(`phys${i}`).checked = false;
-    });
-    if (!s) { status(''); return; }
+// ---- NEW: Load existing values when student changes (robust) ----
+studentSel.addEventListener('change', async () => {
+  const s = studentSel.value;
 
-    try {
-      status('Loading saved progress…');
-      const res = await fetch(`/.netlify/functions/get?student=${encodeURIComponent(s)}`);
-      if (!res.ok) throw new Error('Fetch failed');
-      const data = await res.json();
-
-      if (data.found && Array.isArray(data.tools)) {
-        // data.tools is ordered to match TOOLS
-        data.tools.forEach((t, i) => {
-          document.getElementById(`quiz${i}`).checked = !!t.quizDone;
-          document.getElementById(`phys${i}`).checked = !!t.physicalDone;
-        });
-        status('Loaded saved progress.', 'ok');
-      } else {
-        status('No saved progress yet.'); // new student or empty row
-      }
-    } catch {
-      status('Could not load saved progress.', 'err');
-    }
+  // Clear toggles first
+  TOOLS.forEach((_, i) => {
+    document.getElementById(`quiz${i}`).checked = false;
+    document.getElementById(`phys${i}`).checked = false;
   });
+
+  if (!s) { status(''); return; }
+
+  status('Loading saved progress…');
+
+  try {
+    const res = await fetch(`/.netlify/functions/get?student=${encodeURIComponent(s)}`, {
+      headers: { 'Accept': 'application/json' }
+    });
+
+    let data = null;
+    try { data = await res.json(); } catch { /* leave data = null */ }
+
+    if (data && data.found && Array.isArray(data.tools)) {
+      data.tools.forEach((t, i) => {
+        document.getElementById(`quiz${i}`).checked = !!t.quizDone;
+        document.getElementById(`phys${i}`).checked = !!t.physicalDone;
+      });
+      status('Loaded saved progress.', 'ok');
+      return;
+    }
+
+    status('No saved progress yet.');
+  } catch {
+    status('Network issue — showing defaults.', 'err');
+  }
+});
 
   // ---- Submit logic (upsert) ----
   document.getElementById('form').addEventListener('submit', async (e)=>{
